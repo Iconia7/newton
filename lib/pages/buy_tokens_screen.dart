@@ -65,6 +65,62 @@ class _PaymentScreenState extends State<PaymentScreen>
     super.dispose();
   }
 
+  Future<void> _updateTokenBalance(int tokensToAdd) async {
+  final userId = UserManager.getCurrentUserId();
+  if (userId == null) {
+    debugPrint('❌ User ID not available for token update');
+    return;
+  }
+
+  // Optimistically update local cache for immediate UI response
+  final currentBalance = await UserManager.getCachedTokenBalance() ?? 0;
+  final optimisticBalance = currentBalance + tokensToAdd;
+  await UserManager.updateCachedTokenBalance(optimisticBalance);
+  
+  if (mounted) {
+    setState(() {}); // Refresh UI immediately
+  }
+
+  try {
+    final response = await http.post(
+      Uri.parse('https://bingwa-sokoni-app.onrender.com/api/users/update_tokens'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: json.encode({
+        'userId': userId,
+        'amount': tokensToAdd,
+      }),
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['success'] == true && data['newBalance'] != null) {
+        // Update local cache with server-confirmed balance
+        await UserManager.updateCachedTokenBalance(data['newBalance']);
+        debugPrint('✅ Tokens added: $tokensToAdd | New balance: ${data['newBalance']}');
+      } else {
+        debugPrint('⚠️ Token update succeeded but no balance returned');
+      }
+    } else {
+      // Server error - revert to previous balance
+      await UserManager.updateCachedTokenBalance(currentBalance);
+      debugPrint('❌ Server error: ${response.statusCode}');
+      _showSnackbar('Token update failed. Reverting changes.', isError: true);
+    }
+  } catch (e) {
+    // Network error - revert to previous balance
+    await UserManager.updateCachedTokenBalance(currentBalance);
+    debugPrint('❌ Network error: $e');
+    _showSnackbar('Network error. Reverting token changes.', isError: true);
+  } finally {
+    if (mounted) {
+      setState(() {}); // Final UI update
+    }
+  }
+}
+
   /// Fetches the current token balance from the backend.
   Future<void> _fetchTokenBalance() async {
     try {
@@ -88,44 +144,10 @@ class _PaymentScreenState extends State<PaymentScreen>
     }
   }
 
-  /// Updates the user's token balance on the backend.
-  /// This function should be called after a successful payment.
-  Future<void> _updateTokenBalance(String tokensToAdd) async {
-    try {
-      final url = Uri.parse(
-        'https://bingwa-sokoni-app.onrender.com/api/users/${widget.userId}/add-tokens',
-      );
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'tokens': int.parse(tokensToAdd), // Convert tokens to integer
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        // Successfully updated tokens on the backend, now refetch to update UI
-        _fetchTokenBalance();
-      } else {
-        _showSnackBar(
-          "Failed to update token balance after purchase.",
-          isError: true,
-        );
-      }
-    } catch (e) {
-      print("Error updating token balance: $e");
-      _showSnackBar(
-        "Error updating token balance after purchase.",
-        isError: true,
-      );
-    }
-  }
-
   Future<void> initiatePayment() async {
     final phoneInput = phoneController.text.trim();
     final packageData = packages[selectedPackage];
     final amount = packageData?['amount'];
-    // Explicitly cast tokensToAward to String
     final String? tokensToAward = packageData?['tokens'] as String?;
 
     if (phoneInput.isEmpty || amount == null || tokensToAward == null) {
@@ -136,7 +158,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       return;
     }
 
-    // Format phone number to 2547XXXXXXXX
+    // Format phone number
     String formattedPhone = phoneInput;
     if (formattedPhone.startsWith('0')) {
       formattedPhone = formattedPhone.replaceFirst('0', '254');
@@ -161,29 +183,81 @@ class _PaymentScreenState extends State<PaymentScreen>
           'packageId': selectedPackage,
           'customerName': widget.customerName,
         }),
-      );
+      ).timeout(const Duration(seconds: 30));
 
       final resData = jsonDecode(response.body);
 
       if (response.statusCode == 200 && resData['success'] == true) {
+        final paymentId = resData['paymentId']; // Get payment ID from response
+        
         _showSnackBar(
-          "📲 Check your phone and enter mpesa pin to complete payment.",
+          "📲 Check your phone and enter M-Pesa PIN to complete payment",
           isError: false,
         );
-        // Assuming payment initiation is successful, now update tokens on the backend
-        await _updateTokenBalance(tokensToAward);
+        
+        // Start polling for payment confirmation
+        _pollForPaymentConfirmation(paymentId, int.parse(tokensToAward));
       } else {
         _showSnackBar(
-          "❌ Payment failed: ${resData['message'] ?? 'Unknown error'}",
+          "❌ Payment initiation failed: ${resData['message'] ?? 'Unknown error'}",
           isError: true,
         );
+        setState(() => isLoading = false);
       }
     } catch (e) {
       print("Payment error: $e");
-      _showSnackBar("⚠️ Error initiating payment.", isError: true);
-    } finally {
+      _showSnackBar("⚠️ Error initiating payment", isError: true);
       setState(() => isLoading = false);
     }
+  }
+
+  Future<void> _pollForPaymentConfirmation(String paymentId, int tokensToAward) async {
+    int attempts = 0;
+    const int maxAttempts = 30; // 30 attempts * 10 seconds = 5 minutes
+    const Duration interval = Duration(seconds: 10);
+
+    while (attempts < maxAttempts) {
+      await Future.delayed(interval);
+      attempts++;
+
+      try {
+        final status = await _checkPaymentStatus(paymentId);
+        
+        if (status == 'success') {
+          // Payment succeeded - add tokens
+          await _updateTokenBalance(tokensToAward);
+          _showSnackBar("✅ Payment successful! $tokensToAward tokens added", isError: false);
+          break;
+        } else if (status == 'failed') {
+          // Payment failed
+          _showSnackBar("❌ Payment failed. Please try again", isError: true);
+          break;
+        }
+        // Continue polling if status is 'pending'
+      } catch (e) {
+        print("Polling error: $e");
+        if (attempts == maxAttempts) {
+          _showSnackBar("⚠️ Payment verification timed out", isError: true);
+        }
+      }
+    }
+    
+    setState(() => isLoading = false);
+  }
+
+  Future<String> _checkPaymentStatus(String paymentId) async {
+    final url = Uri.parse(
+      'https://bingwa-sokoni-app.onrender.com/api/payments/status/$paymentId',
+    );
+
+    final response = await http.get(url).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['status'] ?? 'pending'; // 'success', 'failed', or 'pending'
+    }
+    
+    throw Exception('Failed to check payment status');
   }
 
   void _showSnackBar(String message, {required bool isError}) {

@@ -49,7 +49,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // Add these constants at the top of your class
   static const Color snowWhite = Color(0xFFFCF7F8);
-  static const Color madderRed = Color(0xFFA31621);
+  static const Color madderRed = Color(075056);
 
   int? _selectedSimSubscriptionId;
   String _airtimeBalance = 'Tap to Check';
@@ -141,6 +141,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       final userId = UserManager.getCurrentUserId();
       if (userId != null) {
         await _fetchTokenBalanceFromServer(userId);
+        setState(() {});
       }
 
       // Also retry registration if needed
