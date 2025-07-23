@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:newton/models/error_screens.dart';
 import 'package:newton/models/loading_screens.dart';
+import 'package:newton/models/mainwrapper.dart';
 import 'package:newton/pages/buy_tokens_screen.dart';
-import 'package:newton/pages/home_page.dart';
 import 'package:newton/platform_channels.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -16,7 +16,7 @@ void main() async {
   // Initialize app components
   await _initializeApp();
 
-  runApp(const MyApp()); // Added const
+  runApp(const MyApp());
 }
 
 List<String> successKeywords = [];
@@ -89,17 +89,9 @@ class UserManager {
     String? storedId = prefs.getString(_userIdKey);
 
     if (storedId == null) {
-      // Generate new user ID
-      var uuid = const Uuid();
-      storedId = uuid.v4();
+      storedId = const Uuid().v4();
       await prefs.setString(_userIdKey, storedId);
-      debugPrint('Generated new anonymous user ID: $storedId');
-
-      // Set initial registration status as pending
-      await prefs.setString(
-        _registrationStatusKey,
-        RegistrationStatus.pending.name,
-      );
+      debugPrint('Generated new user ID: $storedId');
     }
 
     _cachedUserId = storedId;
@@ -173,7 +165,6 @@ class UserManager {
           );
 
           // Cache initial token balance if provided by backend
-          // Note: Backend now returns 'tokens' not 'initialTokens'
           if (data['tokens'] != null) {
             await prefs.setInt(_tokenBalanceKey, data['tokens']);
           }
@@ -261,17 +252,10 @@ class MyApp extends StatelessWidget {
             return const ModernLoadingScreen();
           }
           if (snapshot.hasError) {
-            // Use the modern error screen
             return ModernErrorScreen(
               errorMessage: _getErrorMessage(snapshot.error),
               onRetry: () => _retryInitialization(context),
             );
-
-            // Alternative: Use the minimal error screen
-            // return MinimalErrorScreen(
-            //   errorMessage: _getErrorMessage(snapshot.error),
-            //   onRetry: () => _retryInitialization(context),
-            // );
           }
 
           final userId = snapshot.data!;
@@ -304,13 +288,6 @@ class MyApp extends StatelessWidget {
         ),
         bodySmall: TextStyle(color: Colors.grey.shade600),
         bodyMedium: const TextStyle(color: Colors.black87),
-      ),
-      cardTheme: CardTheme(
-        elevation: 2,
-        margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12.0),
-        ),
       ),
       appBarTheme: const AppBarTheme(
         elevation: 0,
@@ -414,22 +391,18 @@ class AppRouter extends StatelessWidget {
         switch (settings.name) {
           case '/':
             return MaterialPageRoute(
-              builder: (context) => HomePage(userId: userId),
+              builder: (context) => MainWrapper(userId: userId),
             );
           case '/buy_tokens':
             return MaterialPageRoute(
-              builder:
-                  (context) => PaymentScreen(
-                    userId: userId,
-                    // You'll need to pass the actual customer name here.
-                    // For demonstration, an empty string is used, but in a real app,
-                    // this should come from user input or profile data.
-                    customerName: '',
-                  ),
+              builder: (context) => PaymentScreen(
+                userId: userId,
+                customerName: '',
+              ),
             );
           default:
             return MaterialPageRoute(
-              builder: (context) => HomePage(userId: userId),
+              builder: (context) => MainWrapper(userId: userId),
             );
         }
       },

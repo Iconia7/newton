@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import 'package:newton/main.dart';
+
 class PaymentScreen extends StatefulWidget {
   final String userId;
   final String customerName;
@@ -107,13 +109,13 @@ class _PaymentScreenState extends State<PaymentScreen>
       // Server error - revert to previous balance
       await UserManager.updateCachedTokenBalance(currentBalance);
       debugPrint('❌ Server error: ${response.statusCode}');
-      _showSnackbar('Token update failed. Reverting changes.', isError: true);
+      _showSnackBar('Token update failed. Reverting changes.', isError: true);
     }
   } catch (e) {
     // Network error - revert to previous balance
     await UserManager.updateCachedTokenBalance(currentBalance);
     debugPrint('❌ Network error: $e');
-    _showSnackbar('Network error. Reverting token changes.', isError: true);
+    _showSnackBar('Network error. Reverting token changes.', isError: true);
   } finally {
     if (mounted) {
       setState(() {}); // Final UI update

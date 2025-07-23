@@ -25,14 +25,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
-class HomePage extends StatefulWidget {
+class HomeContent extends StatefulWidget {
   final String userId; // Now required
-  const HomePage({super.key, required this.userId});
+  const HomeContent({super.key, required this.userId});
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomeContent> createState() => _HomeContentState();
 }
 
-class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+class _HomeContentState extends State<HomeContent> with TickerProviderStateMixin {
   List<Map<String, dynamic>> _filteredTransactions = [];
   List<UssdDataPlan> _dataPlans = [];
   List<Transactions> _successfulTransactions = [];
@@ -49,7 +49,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // Add these constants at the top of your class
   static const Color snowWhite = Color(0xFFFCF7F8);
-  static const Color madderRed = Color(075056);
+  static const Color madderRed = Color.fromARGB(0, 19, 106, 133);
 
   int? _selectedSimSubscriptionId;
   String _airtimeBalance = 'Tap to Check';
@@ -1114,11 +1114,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     String? planName,
     String? targetNumber,
   }) async {
-    final Map? currentTransaction = _currentAutoBuyMpesaTransaction;
-    final String? recipientPhoneNumber =
-        targetNumber ?? currentTransaction?['extractedPhoneNumber'];
-    final double? recipientAmount = currentTransaction?['extractedAmount'];
-    final String? recipientName = currentTransaction?['extractedName'];
 
     if (simSubscriptionId == null) {
       _showSnackbar(
@@ -1214,7 +1209,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         );
         final bool isSuccess = response['isSuccess'] ?? false;
         final bool isFailure = response['isFailure'] ?? false;
-        final String responseText = response['response'] ?? '';
 
         if (isSuccess) {
           // USSD was successful - now deduct the token
